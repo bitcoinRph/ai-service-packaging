@@ -1,3 +1,6 @@
 [submodule "hello-world-startos"]
 	path = hello-world-startos
 	url = git@github.com:Start9Labs/hello-world-startos.git
+[submodule "codex-autorunner-startos/codex-autorunner"]
+	path = codex-autorunner-startos/codex-autorunner
+	url = https://github.com/bitcoinRph/codex-autorunner.git

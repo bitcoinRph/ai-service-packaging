@@ -1,0 +1,15 @@
+# Keep the Docker build context small and reproducible.
+node_modules
+**/node_modules
+javascript
+*.s9pk
+.git
+**/.git
+codex-autorunner/.venv
+codex-autorunner/.codex-autorunner
+codex-autorunner/worktrees
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
