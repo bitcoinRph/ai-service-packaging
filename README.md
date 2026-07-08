@@ -17,7 +17,7 @@ When you run Claude Code in a directory that references this repo's `CLAUDE.md`,
 2. Clone this repo:
 
    ```sh
-   git clone https://github.com/Start9Labs/service-packaging.git ai-service-packaging
+   git clone https://github.com/bitcoinRph/ai-service-packaging.git ai-service-packaging
    ```
 
 3. Copy the root `CLAUDE.md` into your services directory:
@@ -37,3 +37,15 @@ When you run Claude Code in a directory that references this repo's `CLAUDE.md`,
    ```
 
 Claude will introduce itself, check for any pending tasks, and ask what you'd like to do — including packaging a new service. You can give it a repo URL, a project name, a product you want a self-hosted alternative to, or just describe what you need.
+
+## Current StartOS build requirements
+
+StartOS packaging now expects a packaging **workspace** around package repositories. Before running `make` or `start-cli s9pk pack` from a package checkout, initialize the parent workspace:
+
+```sh
+start-cli s9pk init-workspace .      # run once in the workspace directory
+# or, from inside <workspace>/<package-repo>:
+start-cli s9pk init-workspace ..
+```
+
+For GitHub Actions, do not fetch `start-cli` from `Start9Labs/start-os/releases/latest`; that latest release may be for another StartOS component. Use the `start-cli/*` release lookup documented in [GitHub Actions CI](./github-actions.md).

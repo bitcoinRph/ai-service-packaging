@@ -44,11 +44,42 @@ Tool for creating compressed filesystem images for packaging compiled service co
 
 The core development toolkit that provides package validation, s9pk file creation, and development workflow management.
 
-**Installation**: Run the automated installer:
+**Local installation**: Run the automated installer:
 
 ```bash
 curl -fsSL https://start9labs.github.io/start-cli | sh
 ```
+
+**CI installation**: GitHub Actions should not download from `Start9Labs/start-os/releases/latest`, because the latest release can be for another StartOS component and may not contain `start-cli_x86_64-linux`. Instead, resolve the latest `start-cli/*` release from `Start9Labs/start-technologies`:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+url="$(curl -fsSL 'https://api.github.com/repos/Start9Labs/start-technologies/releases?per_page=20' \
+  | jq -r '[.[] | select(.tag_name | startswith("start-cli/")) | .assets[] | select(.name == "start-cli_x86_64-linux") | .browser_download_url][0] // empty')"
+if [ -z "$url" ]; then
+  echo "Unable to find start-cli_x86_64-linux in Start9Labs/start-technologies start-cli releases" >&2
+  exit 1
+fi
+curl -fsSL "$url" -o "$HOME/.local/bin/start-cli"
+chmod +x "$HOME/.local/bin/start-cli"
+echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+```
+
+See [GitHub Actions CI](./github-actions.md) for the complete workflow skeleton.
+
+### Packaging workspace
+
+Current `start-cli` releases require a packaging workspace: the directory that contains package repositories and the packaging guide checkout. Initialize it once before packing:
+
+```bash
+# From the workspace directory that contains your package repos
+start-cli s9pk init-workspace .
+
+# Or from inside <workspace>/<package-repo>
+start-cli s9pk init-workspace ..
+```
+
+If this is missing, `make` / `start-cli s9pk pack` can fail with `Uninitialized: No packaging workspace found`.
 
 ## Verification
 

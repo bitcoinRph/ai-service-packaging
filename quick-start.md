@@ -18,6 +18,10 @@ Complete the [environment setup](./environment-setup.md) before beginning.
 ### 2. Clone and Initialize
 
 ```bash
+mkdir -p services
+cd services
+git clone https://github.com/bitcoinRph/ai-service-packaging.git ai-service-packaging
+start-cli s9pk init-workspace .
 git clone [your-repository-url]
 cd [repository-name]
 npm install
@@ -36,6 +40,7 @@ git submodule add https://github.com/user/project.git upstream-project
 Run the build command:
 
 ```bash
+start-cli s9pk init-workspace ..  # safe to re-run; required if the parent workspace is not initialized
 make
 ```
 
@@ -69,6 +74,7 @@ npm run check
 npm run build
 
 # Full package build
+start-cli s9pk init-workspace ..
 make
 
 # Install to local StartOS

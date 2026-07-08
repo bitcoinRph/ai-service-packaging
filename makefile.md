@@ -98,6 +98,16 @@ The build system checks for:
 - `start-cli` - StartOS CLI tool
 - `npm` - Node.js package manager
 - `~/.startos/developer.key.pem` - Developer key (auto-initialized if missing)
+- A StartOS packaging workspace initialized in the parent directory (`start-cli s9pk init-workspace ..` from inside the package repo)
+
+If `make` fails with `Uninitialized: No packaging workspace found`, initialize the workspace and retry:
+
+```bash
+start-cli s9pk init-workspace ..
+make
+```
+
+For GitHub Actions, include a dedicated workspace-init step before `make`; see [GitHub Actions CI](./github-actions.md).
 
 ## Installation
 
