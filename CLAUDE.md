@@ -17,6 +17,7 @@
 - [File Models](./file-models.md) - Type-safe configuration files and store.json
 - [Cross-Service Dependencies](./cross-service-dependencies.md) - Dependency tasks, interface reading, volume mounting
 - [Makefile](./makefile.md) - Build system with s9pk.mk
+- [GitHub Actions CI](./github-actions.md) - Current Start CLI release lookup and workspace initialization for `.s9pk` builds
 - [Writing READMEs](./writing-readmes.md) - README structure, AI prompt, and pre-publish checklist
 
 Reference `hello-world-startos/` for boilerplate files (`package.json`, `tsconfig.json`, `Makefile`, `s9pk.mk`, `startos/` structure).
@@ -180,12 +181,22 @@ See [manifest.ts](./manifest-ts.md) for Docker image configuration (`dockerTag` 
 
 ## Build Commands
 
+Before running `make` in a package checkout, ensure the parent packaging workspace is initialized. If Claude is working inside `<workspace>/<package-repo>`, run:
+
+```bash
+start-cli s9pk init-workspace ..
+```
+
+This is required by current `start-cli` releases; otherwise `start-cli s9pk pack` may fail with `Uninitialized: No packaging workspace found`.
+
 ```bash
 npm run check    # TypeScript check
 npm run build    # Build JS bundle
 make             # Build .s9pk package
 make install     # Install to local StartOS
 ```
+
+When creating or repairing GitHub Actions workflows, follow [GitHub Actions CI](./github-actions.md). In particular: install `start-cli` from the latest `start-cli/*` release in `Start9Labs/start-technologies`, not from `Start9Labs/start-os/releases/latest`, and initialize the workspace before `make`.
 
 ## Code Style Guidelines
 
@@ -363,5 +374,7 @@ Once an upstream repo is identified, gather the following information. Research 
    - `Dockerfile` — write one if upstream doesn't provide a suitable image ([manifest-ts.md](./manifest-ts.md))
    - Symlink `LICENSE` and `icon.*` from upstream
 4. Run `npm run check` and fix any type errors
-5. Run `make` to build the `.s9pk`
-6. Walk through the [Checklist](#checklist) to verify nothing was missed
+5. Run `start-cli s9pk init-workspace ..` from inside the package repo if the parent workspace has not already been initialized
+6. Run `make` to build the `.s9pk`
+7. If adding CI, use the current [GitHub Actions CI](./github-actions.md) pattern so `start-cli` resolves correctly and the workspace is initialized before packing
+8. Walk through the [Checklist](#checklist) to verify nothing was missed
