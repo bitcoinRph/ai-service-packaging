@@ -1,4 +1,15 @@
-# StartOS Service Packaging Guide
+# Agent Packaging Guide for StartOS
+
+This is the canonical `bitcoinRph/ai-service-packaging` guide for using Claude Code, Codex, Hermes Agent, or OpenClaw to package services for StartOS. The upstream `Start9Labs/ai-service-packaging` repo is archived; treat this repository as the maintained source of truth.
+
+Agent entry points:
+
+- Claude Code: read this `CLAUDE.md` directly, or copy `ROOT_CLAUDE.md` into the parent workspace as `CLAUDE.md`.
+- Codex / Codex CLI: read `AGENTS.md`, which routes back to this file.
+- Hermes Agent: load the `startos-ai-service-packaging` skill and/or use this repo as the working directory so `AGENTS.md` is injected.
+- OpenClaw: use `AGENTS.md` or this `CLAUDE.md`, depending on the adapter.
+
+Build policy: prefer package-repo GitHub Actions for `.s9pk` artifacts using `github-actions.md`. Local `.s9pk` builds require working Docker/Buildah, SquashFS tools, Node.js v22, Make, and `start-cli`. Never install, sideload, update, or restart a live StartOS service without explicit approval.
 
 ## Getting Started
 
@@ -181,7 +192,7 @@ See [manifest.ts](./manifest-ts.md) for Docker image configuration (`dockerTag` 
 
 ## Build Commands
 
-Before running `make` in a package checkout, ensure the parent packaging workspace is initialized. If Claude is working inside `<workspace>/<package-repo>`, run:
+Before running `make` in a package checkout, ensure the parent packaging workspace is initialized. If the agent is working inside `<workspace>/<package-repo>`, run:
 
 ```bash
 start-cli s9pk init-workspace ..
