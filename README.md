@@ -104,3 +104,30 @@ See [Environment Setup](./environment-setup.md). Local TypeScript checks can usu
 ## Safety policy
 
 Agents using this guide should prepare branches, PRs, and build artifacts. They should not install, sideload, update, or restart a live StartOS service unless the human explicitly approves that specific action.
+
+## Start CLI release lookup pitfall
+
+Do not install `start-cli` from `Start9Labs/start-os/releases/latest`: that repository may publish non-CLI release families such as `start-wrt/*`, leaving the `start-cli_x86_64-linux` asset lookup empty and causing `curl: (3) URL rejected: Malformed input to a URL function`.
+
+Use `Start9Labs/start-technologies` and select the newest `start-cli/*` release that contains `start-cli_x86_64-linux`, guard against an empty URL, and run `start-cli s9pk init-workspace ..` before `make <arch>` in GitHub Actions.
+
+```yaml
+- name: Install Start CLI
+  run: |
+    mkdir -p "$HOME/.local/bin"
+    url="$(curl -fsSL 'https://api.github.com/repos/Start9Labs/start-technologies/releases?per_page=20' \
+      | jq -r '[.[] | select(.tag_name | startswith("start-cli/")) | .assets[] | select(.name == "start-cli_x86_64-linux") | .browser_download_url][0] // empty')"
+    if [ -z "$url" ]; then
+      echo "Unable to find start-cli_x86_64-linux in Start9Labs/start-technologies start-cli releases" >&2
+      exit 1
+    fi
+    curl -fsSL "$url" -o "$HOME/.local/bin/start-cli"
+    chmod +x "$HOME/.local/bin/start-cli"
+    echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+- name: Initialize StartOS developer key
+  run: start-cli init-key
+
+- name: Initialize StartOS packaging workspace
+  run: start-cli s9pk init-workspace ..
+```

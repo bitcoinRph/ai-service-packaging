@@ -198,7 +198,7 @@ Before running `make` in a package checkout, ensure the parent packaging workspa
 start-cli s9pk init-workspace ..
 ```
 
-This is required by current `start-cli` releases; otherwise `start-cli s9pk pack` may fail with `Uninitialized: No packaging workspace found`.
+This is required by current `start-cli` releases; otherwise `start-cli -H http://localhost s9pk pack` may fail with `Uninitialized: No packaging workspace found`.
 
 ```bash
 npm run check    # TypeScript check

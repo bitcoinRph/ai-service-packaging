@@ -79,7 +79,7 @@ start-cli s9pk init-workspace .
 start-cli s9pk init-workspace ..
 ```
 
-If this is missing, `make` / `start-cli s9pk pack` can fail with `Uninitialized: No packaging workspace found`.
+If this is missing, `make` / `start-cli -H http://localhost s9pk pack` can fail with `Uninitialized: No packaging workspace found`.
 
 ## Verification
 

@@ -6,7 +6,7 @@ This is the current CI pattern for building StartOS `.s9pk` artifacts on GitHub-
 
 Start9 moved the StartOS tooling releases under `Start9Labs/start-technologies`, and the repository's latest release may be for a component other than `start-cli` (for example `start-wrt/...`). Do **not** fetch `Start9Labs/start-os/releases/latest` and assume it contains `start-cli_x86_64-linux`.
 
-Newer `start-cli` also requires a packaging **workspace**: the directory that contains the package repo and the packaging guide checkout. Running `start-cli s9pk pack` directly inside an uninitialized package checkout can fail with:
+Newer `start-cli` also requires a packaging **workspace**: the directory that contains the package repo and the packaging guide checkout. Running `start-cli -H http://localhost s9pk pack` directly inside an uninitialized package checkout can fail with:
 
 ```text
 Uninitialized: No packaging workspace found
@@ -18,6 +18,7 @@ Uninitialized: No packaging workspace found
 2. Fail clearly if `start-cli_x86_64-linux` cannot be resolved.
 3. Run `start-cli s9pk init-workspace ..` before `make` when the checkout path is `<workspace>/<package-repo>`.
 4. Run package builds from the package repo directory after workspace initialization.
+5. Ensure CI build-only pack commands do not inherit the generated `host.default: https://dev-vm.local`; either pass `-H http://localhost` to `start-cli ... s9pk pack` in build plumbing or patch vendored `s9pk.mk` accordingly.
 
 ## Minimal workflow steps
 
@@ -136,3 +137,8 @@ start-cli s9pk init-workspace ..
 Cause: `$HOME/.local/bin` was not added to `GITHUB_PATH` after downloading `start-cli`.
 
 Fix: keep `echo "$HOME/.local/bin" >> "$GITHUB_PATH"` in the install step.
+### `Network Error: Failed to resolve hostname: dev-vm.local`
+
+Cause: `start-cli s9pk init-workspace` writes a development host profile (`host.default: https://dev-vm.local`) into the workspace config. Newer `start-cli` initializes `CliContext` even for local `s9pk` commands, so CI runners without mDNS for `dev-vm.local` can fail before Docker/buildx starts.
+
+Fix: build-only commands should override the host with `-H http://localhost`, for example `start-cli -H http://localhost s9pk pack --arch=x86_64 -o package_x86_64.s9pk`, or patch vendored `s9pk.mk` pack/list-ingredients invocations. Do not use this override for `install` or `publish`; those intentionally target configured hosts/registries.
