@@ -74,7 +74,7 @@ sdk.action.createTask(
   effects,
   packageId: string,         // dependency service ID
   action: ActionDefinition,  // imported from the dependency package
-  severity: 'critical' | 'high' | 'medium' | 'low',
+  severity: 'critical' | 'important' | 'optional',
   options?: {
     input?: { kind: 'partial', value: Partial<InputSpec> },
     when?: { condition: 'input-not-matches', once: boolean },
@@ -92,27 +92,20 @@ sdk.action.createTask(
 
 ## Reading Dependency Interfaces (main.ts)
 
-Use `sdk.serviceInterface.get()` to read a dependency's interface at runtime:
+Use `sdk.host.get()` to read a dependency's host at runtime (SDK 2.0 replaced `sdk.serviceInterface.get`):
 
 ```typescript
-const url = await sdk.serviceInterface
+const url = await sdk.host
   .get(
     effects,
-    { id: 'interface-id', packageId: 'dependency-id' },
-    (i) => {
-      const urls = i?.addressInfo?.format('urlstring')
-      if (!urls || urls.length === 0) return null
-      return urls[0]
-    },
+    { hostId: 'host-id', packageId: 'dependency-id' },
+    (host) =>
+      host?.bindings[8332]?.interfaces['interface-id']?.addressInfo.format('urlstring')[0] ?? null,
   )
-  .const()  // re-runs setupMain if the interface changes
+  .const()  // re-runs setupMain if the dependency's host changes
 ```
 
-**Alternative: direct hostname.** Services are reachable at `http://<package-id>.startos:<port>`:
-
-```typescript
-const url = 'http://bitcoind.startos:8332'
-```
+**Alternative: the bridge address.** `sdk.host.getBridgeAddress(effects, { hostId, packageId, internalPort })` resolves the `10.0.3.1:<port>` address another package's binding is reachable at from your container, whichever way that package terminates TLS.
 
 ## Mounting Dependency Volumes (main.ts)
 

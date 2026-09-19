@@ -20,9 +20,9 @@ Build automation tool used to execute build scripts defined in Makefiles and coo
 - **Linux (Debian-based)**: `sudo apt install build-essential`
 - **macOS**: `xcode-select --install`
 
-### Node.js v22 (Latest LTS)
+### Node.js v22 or newer
 
-Node.js is required for compiling TypeScript code used in StartOS package configurations.
+Node.js is required for compiling TypeScript code used in StartOS package configurations. Some upstream builds need more: an image that runs the upstream's own toolchain inside `docker build` picks its own Node there and is unaffected.
 
 **Installation**: Use [nvm](https://github.com/nvm-sh/nvm) or download from [nodejs.org](https://nodejs.org/).
 
@@ -44,10 +44,10 @@ Tool for creating compressed filesystem images for packaging compiled service co
 
 The core development toolkit that provides package validation, s9pk file creation, and development workflow management.
 
-**Local installation**: Run the automated installer:
+**Local installation**: Run the official installer:
 
 ```bash
-curl -fsSL https://start9labs.github.io/start-cli | sh
+curl -fsSL https://start9.com/start-cli/install.sh | sh
 ```
 
 **CI installation**: GitHub Actions should not download from `Start9Labs/start-os/releases/latest`, because the latest release can be for another StartOS component and may not contain `start-cli_x86_64-linux`. Instead, resolve the latest `start-cli/*` release from `Start9Labs/start-technologies`:
@@ -69,17 +69,15 @@ See [GitHub Actions CI](./github-actions.md) for the complete workflow skeleton.
 
 ### Packaging workspace
 
-Current `start-cli` releases require a packaging workspace: the directory that contains package repositories and the packaging guide checkout. Initialize it once before packing:
+`start-cli` signs packages with a **workspace** key, so every package must live under a workspace: the directory that contains package repos, marked by `.startos/build.key.pem` (and a `config.yaml` with host and registry profiles). Create it once, in a directory that is not itself a package repo:
 
 ```bash
-# From the workspace directory that contains your package repos
-start-cli s9pk init-workspace .
-
-# Or from inside <workspace>/<package-repo>
-start-cli s9pk init-workspace ..
+start-cli s9pk init-workspace start9-workspace
 ```
 
-If this is missing, `make` / `start-cli -H http://localhost s9pk pack` can fail with `Uninitialized: No packaging workspace found`.
+This also clones `Start9Labs/start-technologies` into `start9-workspace/start-technologies/`, whose `projects/start-sdk/docs/src/` is the official packaging guide, and writes `AGENTS.md` / `CLAUDE.md` so an AI assistant opened there knows the rules. Re-running `init-workspace` fills in anything missing and never overwrites your key. `start-cli` walks up from the current directory to find the nearest `.startos/`, so nested workspaces work and a package inside a larger repository (for example `deploy/startos/`) finds the workspace beside that repository.
+
+Refresh the guide at the start of a session with `git -C start-technologies pull --ff-only`.
 
 ## Verification
 

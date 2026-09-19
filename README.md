@@ -9,6 +9,8 @@ Agent Packaging Guide is the canonical `bitcoinRph` playbook for packaging self-
 
 The guide teaches an agent how to turn an upstream open-source service into a StartOS `.s9pk` package: discovery, manifest wiring, daemons, interfaces, actions, file models, versioning, CI builds, and safe handoff.
 
+It tracks **`@start9labs/start-sdk` 2.x** and `start-cli` 2.x. Start9's own guide is the source of truth: `start-cli s9pk init-workspace` clones it into `<workspace>/start-technologies/projects/start-sdk/docs/src/` (published at <https://docs.start9.com/packaging>), and its `recipes.md` maps every packaging intent to a recipe and a production package to copy. This repository is the condensed, multi-agent form; where the two disagree, the official guide wins.
+
 ## Canonical source
 
 Use this repository as the maintained source of truth:
@@ -52,7 +54,7 @@ cp ai-service-packaging/ROOT_CLAUDE.md CLAUDE.md
 cp ai-service-packaging/AGENTS.md AGENTS.md
 ```
 
-Then open your preferred agent in `services/` and ask it to package a service. You can provide a GitHub repo URL, Docker image, product name, or description of the service you want.
+Then run `start-cli s9pk init-workspace .` in `services/` so the signing key, the official guide checkout and the workspace agent context exist next to this one, and open your preferred agent in `services/`. Ask it to package a service: a GitHub repo URL, a Docker image, a product name, or a description of what you need.
 
 ## Build strategy
 
@@ -60,29 +62,22 @@ Prefer GitHub Actions for `.s9pk` builds unless your local machine has a fully w
 
 Key rules:
 
-1. Install `start-cli` from the latest `start-cli/*` release in `Start9Labs/start-technologies`.
-2. Do **not** fetch `Start9Labs/start-os/releases/latest` and assume it contains `start-cli_x86_64-linux`.
-3. Initialize the packaging workspace before packing:
-
-   ```sh
-   start-cli s9pk init-workspace .      # from workspace root
-   # or, from inside <workspace>/<package-repo>:
-   start-cli s9pk init-workspace ..
-   ```
-
-4. Build package artifacts in GitHub Actions with the workflow skeleton in `github-actions.md`.
+1. A package at the root of its own repository uses Start9's reusable workflows (`Start9Labs/start-technologies/.github/workflows/build.yml@master`) exactly as the SDK template ships them.
+2. A package inside another repository uses the `setup-build-env` composite action and provisions the workspace key itself; the skeleton is in `github-actions.md`.
+3. Never fetch `Start9Labs/start-os/releases/latest` for `start-cli`; the `start-cli/*` releases live in `Start9Labs/start-technologies`.
+4. Build arm packages on an arm runner (`ubuntu-24.04-arm`), not under QEMU.
 
 ## Local development requirements
 
 For local package work, install/verify:
 
-- Docker or Buildah/container tooling
-- Make
-- Node.js v22 LTS
+- Docker (running)
+- Make, git, jq
+- Node.js v22 or newer with npm
 - SquashFS tools
-- Start CLI
+- Start CLI, and a packaging workspace (`start-cli s9pk init-workspace`)
 
-See [Environment Setup](./environment-setup.md). Local TypeScript checks can usually run with `npm install && npm run check`; full `.s9pk` builds require the complete packaging toolchain.
+See [Environment Setup](./environment-setup.md). Local TypeScript checks run with `npm install && npm run check`; a full `.s9pk` build (`make x86`) requires the complete toolchain and the workspace.
 
 ## Documentation map
 
@@ -109,25 +104,8 @@ Agents using this guide should prepare branches, PRs, and build artifacts. They 
 
 Do not install `start-cli` from `Start9Labs/start-os/releases/latest`: that repository may publish non-CLI release families such as `start-wrt/*`, leaving the `start-cli_x86_64-linux` asset lookup empty and causing `curl: (3) URL rejected: Malformed input to a URL function`.
 
-Use `Start9Labs/start-technologies` and select the newest `start-cli/*` release that contains `start-cli_x86_64-linux`, guard against an empty URL, and run `start-cli s9pk init-workspace ..` before `make <arch>` in GitHub Actions.
+Locally, use the official installer: `curl -fsSL https://start9.com/start-cli/install.sh | sh`. In CI, use `Start9Labs/start-technologies/.github/actions/setup-build-env@master`, which resolves the newest `start-cli` asset from the `start-technologies` releases itself. The pinned-asset script is in [GitHub Actions CI](./github-actions.md).
 
-```yaml
-- name: Install Start CLI
-  run: |
-    mkdir -p "$HOME/.local/bin"
-    url="$(curl -fsSL 'https://api.github.com/repos/Start9Labs/start-technologies/releases?per_page=20' \
-      | jq -r '[.[] | select(.tag_name | startswith("start-cli/")) | .assets[] | select(.name == "start-cli_x86_64-linux") | .browser_download_url][0] // empty')"
-    if [ -z "$url" ]; then
-      echo "Unable to find start-cli_x86_64-linux in Start9Labs/start-technologies start-cli releases" >&2
-      exit 1
-    fi
-    curl -fsSL "$url" -o "$HOME/.local/bin/start-cli"
-    chmod +x "$HOME/.local/bin/start-cli"
-    echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+## Worked example
 
-- name: Initialize StartOS developer key
-  run: start-cli init-key
-
-- name: Initialize StartOS packaging workspace
-  run: start-cli s9pk init-workspace ..
-```
+[bitcoinRph/crm-startos](https://github.com/bitcoinRph/crm-startos) packages a Bun/Next.js/NestJS monorepo with a PostgreSQL sidecar, a password sign-in, a cron replacement and an MCP endpoint, as `deploy/startos/` inside the upstream fork. Its `README.md`, `main.ts` and workflow are the reference for a package that must build the upstream from source.

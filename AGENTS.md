@@ -30,11 +30,13 @@ Use this guide to:
 
 Prefer repository GitHub Actions for `.s9pk` builds. Follow `github-actions.md` exactly:
 
-- install `start-cli` from the latest `start-cli/*` release in `Start9Labs/start-technologies`;
-- initialize the packaging workspace with `start-cli s9pk init-workspace ..` before `make`;
+- use Start9's reusable workflows or its `setup-build-env` action from `Start9Labs/start-technologies`;
+- provision the workspace signing key (`.startos/build.key.pem`) in the package's parent before `make`;
 - do not fetch `Start9Labs/start-os/releases/latest` for `start-cli`.
 
-Local builds are acceptable only when Docker/Buildah, SquashFS tools, Node.js v22, Make, and `start-cli` are installed and working.
+Local builds are acceptable only when Docker, SquashFS tools, Node.js v22+, Make, `start-cli` and a packaging workspace are present and working.
+
+The package template and SDK are `@start9labs/start-sdk` 2.x. When the official guide in `<workspace>/start-technologies/projects/start-sdk/docs/src/` is present, read its `recipes.md` first; this repository is the short form.
 
 ## Safety rules
 
