@@ -2,91 +2,74 @@
 
 ## Prerequisites
 
-Complete the [environment setup](./environment-setup.md) before beginning.
+Complete the [environment setup](./environment-setup.md) before beginning, including the packaging workspace.
 
 ## Creating Your Package Repository
 
-### 1. Use the Hello World Template
+### 1. Create a workspace
 
-1. Navigate to the [Hello World Template](https://github.com/Start9Labs/hello-world-startos) on GitHub
-2. Click **"Use this template > Create new repository"** (requires GitHub login)
-3. Name your repository as `[service-name]-startos` (e.g., `nextcloud-startos`)
-4. Add description: "StartOS package for [Service Name]"
-5. Ensure the repository is **public**
-6. Click **"Create Repository"**
-
-### 2. Clone and Initialize
+A workspace is the directory that holds package repos and the official guide checkout. Create it once, outside any package repo:
 
 ```bash
-mkdir -p services
-cd services
-git clone https://github.com/bitcoinRph/ai-service-packaging.git ai-service-packaging
-start-cli s9pk init-workspace .
-git clone [your-repository-url]
-cd [repository-name]
-npm install
+start-cli s9pk init-workspace start9-workspace
+cd start9-workspace
 ```
+
+This clones `Start9Labs/start-technologies` into `start-technologies/` (the official guide is at `projects/start-sdk/docs/src/`), writes `AGENTS.md`, `AGENTS.local.md` and `CLAUDE.md` for AI assistants, and provisions `.startos/` with a signing key and a `config.yaml` for hosts and registries. Clone this guide next to it if you use it as extra context:
+
+```bash
+git clone https://github.com/bitcoinRph/ai-service-packaging.git ai-service-packaging
+```
+
+### 2. Scaffold the package
+
+```bash
+start-cli s9pk init-package "My Service"
+```
+
+`init-package` normalizes the display name to an id, creates `my-service-startos/` from the SDK's bundled template (a buildable Hello World clone), runs `git init` and `npm install`, and leaves a `TODO.md` checklist. Do not hand-assemble a package by copying another one; scaffold, then work the checklist. `hello-world-startos/` in this repo is the same template for reference.
 
 ### 3. Add Upstream Project (Optional)
 
-If wrapping an existing project, add it as a git submodule:
+If wrapping an existing project's source, add it as a git submodule:
 
 ```bash
 git submodule add https://github.com/user/project.git upstream-project
 ```
 
+A package can also live **inside** an upstream fork, for example at `deploy/startos/`, with `dockerBuild: { workdir: '../..', dockerfile: '../../Dockerfile' }` in the manifest. The workspace then sits next to the fork, not inside it. See the [CRM package](https://github.com/bitcoinRph/crm-startos/tree/release/deploy/startos) for a worked example.
+
 ## Building Your Package
 
-Run the build command:
-
 ```bash
-start-cli s9pk init-workspace ..  # safe to re-run; required if the parent workspace is not initialized
-make
+cd my-service-startos
+make x86        # or: make arm
 ```
 
-This generates a `[service-id].s9pk` file in your project root.
+The first build pulls or builds the container image, so it can take minutes. The result is `my-service_x86_64.s9pk`. Building every architecture (`make`) or one multi-arch package (`make universal`) is for publishing.
 
 ## Installing to StartOS
 
 ### Option 1: Sideload via UI
 
-1. Open your StartOS web interface
-2. Navigate to **Marketplace > Sideload**
-3. Upload the `.s9pk` file
+1. Open your StartOS web interface and log in
+2. Click **Sideload** in the top navigation
+3. Select the `.s9pk` you built
 
-### Option 2: Direct Install (Local Network)
+### Option 2: `make install`
 
-If your StartOS device is accessible on your local network:
-
-```bash
-make install
-```
-
-This requires the `START_HOSTNAME` environment variable to be set, or you can modify the Makefile.
+Set `host.default` in the workspace's `.startos/config.yaml`, run `start-cli auth login` once, then `make x86 install`. Only do this when the user has explicitly approved installing to that device.
 
 ## Development Workflow
 
 ```bash
-# TypeScript type checking
-npm run check
-
-# Build JS bundle only
-npm run build
-
-# Full package build
-start-cli s9pk init-workspace ..
-make
-
-# Install to local StartOS
-make install
+npm run check        # TypeScript type checking
+npm run build        # Build the JS bundle only
+make x86             # Full package build (runs check, lint and prettier first)
 ```
 
 ## Next Steps
 
-1. Review [project structure](./project-structure.md) to understand file layout
-2. Update `startos/manifest/` with your service metadata and translations
-3. Configure `main.ts` with daemons and health checks
-4. Set up `interfaces.ts` for network exposure
-5. Add i18n dictionaries in `startos/i18n/dictionaries/`
-6. Add actions in `actions/` directory
-7. Test on StartOS
+1. Work the package's `TODO.md` top to bottom (it mirrors the official New Package Checklist)
+2. Read `start-technologies/projects/start-sdk/docs/src/recipes.md`: it maps each intent to a recipe and a production package to copy
+3. Use this guide's pages ([manifest](./manifest-ts.md), [main.ts](./main-ts.md), [interfaces](./interfaces-ts.md), [init](./init.md), [actions](./actions.md), [file models](./file-models.md)) as the short form of the same material

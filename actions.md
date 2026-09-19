@@ -7,34 +7,35 @@ import { i18n } from '../i18n'
 import { sdk } from '../sdk'
 import { storeJson } from '../fileModels/store.json'
 
-export const getAdminCredentials = sdk.Action.withoutInput(
+export const setAdminPassword = sdk.Action.withoutInput(
   // ID
-  'get-admin-credentials',
+  'set-admin-password',
 
   // Metadata
-  async ({ effects }) => ({
-    name: i18n('Get Admin Credentials'),
-    description: i18n('Retrieve admin username and password'),
+  async () => ({
+    name: i18n('Set Admin Password'),
+    description: i18n('Generate a new random password for the admin account. Replaces any existing password.'),
     warning: null,
     allowedStatuses: 'any',  // 'any', 'only-running', 'only-stopped'
     group: null,
     visibility: 'enabled',   // 'enabled', 'disabled', 'hidden'
   }),
 
-  // Handler
+  // Handler: the one place the credential is generated, stored and shown
   async ({ effects }) => {
-    const store = await storeJson.read((s) => s).once()
+    const adminPassword = utils.getDefaultString({ charset: 'a-z,A-Z,0-9', len: 32 })
+    await storeJson.merge(effects, { adminPassword })
 
     return {
-      version: '1' as const,
-      title: 'Admin Credentials',
-      message: 'Your admin credentials:',
+      version: '1',
+      title: i18n('Login Credentials'),
+      message: i18n('Use these credentials to sign in.'),
       result: {
         type: 'group',
         value: [
           {
             type: 'single',
-            name: 'Username',
+            name: i18n('Username'),
             description: null,
             value: 'admin',
             masked: false,
@@ -43,9 +44,9 @@ export const getAdminCredentials = sdk.Action.withoutInput(
           },
           {
             type: 'single',
-            name: 'Password',
+            name: i18n('Password'),
             description: null,
-            value: store?.adminPassword ?? 'UNKNOWN',
+            value: adminPassword,
             masked: true,
             copyable: true,
             qr: false,
@@ -63,10 +64,12 @@ In `actions/index.ts`:
 
 ```typescript
 import { sdk } from '../sdk'
-import { getAdminCredentials } from './getAdminCredentials'
+import { setAdminPassword } from './setAdminPassword'
 
-export const actions = sdk.Actions.of().addAction(getAdminCredentials)
+export const actions = sdk.Actions.of().addAction(setAdminPassword)
 ```
+
+The same action serves first-set (surfaced by a critical task from an init watcher, see [Initialization](./init.md)) and later rotation. A separate "show credentials" action that reads a stored password is the shape reviewers reject.
 
 ## Result Types
 
@@ -96,15 +99,15 @@ result: {
 
 ## Creating Tasks (Prompts)
 
-In `init/initializeService.ts`, prompt user to run an action:
+In an init file such as `init/watchCredentials.ts`, prompt the user to run an action when state is missing:
 
 ```typescript
-await sdk.action.createOwnTask(effects, getAdminCredentials, 'critical', {
-  reason: i18n('Retrieve the admin password'),
+await sdk.action.createOwnTask(effects, setAdminPassword, 'critical', {
+  reason: i18n('Set the admin password before signing in'),
 })
 ```
 
-Priority levels: `'critical'`, `'high'`, `'medium'`, `'low'`
+Severity levels: `'critical'` (the service cannot start until it is done), `'important'`, `'optional'`. Wrap every user-facing string, including result names and titles, in `i18n()`; do not write `'1' as const`, the SDK already types the literal.
 
 ## SMTP Configuration Action
 
@@ -113,22 +116,17 @@ The SDK provides a built-in SMTP input specification for managing email credenti
 ### 1. Add SMTP to store.json.ts
 
 ```typescript
-import { matches, FileHelper } from '@start9labs/start-sdk'
+import { FileHelper, smtpShape, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
-const { object, string } = matches
-
-const shape = object({
-  adminPassword: string.optional().onMismatch(undefined),
-  secretKey: string.optional().onMismatch(undefined),
-  smtp: sdk.inputSpecConstants.smtpInputSpec.validator.onMismatch({
-    selection: 'disabled',
-    value: {},
-  }),
+const shape = z.object({
+  adminPassword: z.string().optional().catch(undefined),
+  secretKey: z.string().catch(''),
+  smtp: smtpShape,
 })
 
 export const storeJson = FileHelper.json(
-  { volumeId: 'main', subpath: 'store.json' },
+  { base: sdk.volumes.main, subpath: './store.json' },
   shape,
 )
 ```
@@ -136,6 +134,7 @@ export const storeJson = FileHelper.json(
 ### 2. Create manageSmtp.ts action
 
 ```typescript
+import { smtpPrefill } from '@start9labs/start-sdk'
 import { i18n } from '../i18n'
 import { storeJson } from '../fileModels/store.json'
 import { sdk } from '../sdk'
@@ -149,7 +148,7 @@ export const inputSpec = InputSpec.of({
 export const manageSmtp = sdk.Action.withInput(
   'manage-smtp',
 
-  async ({ effects }) => ({
+  async () => ({
     name: i18n('Configure SMTP'),
     description: i18n('Add SMTP credentials for sending emails'),
     warning: null,
@@ -160,9 +159,9 @@ export const manageSmtp = sdk.Action.withInput(
 
   inputSpec,
 
-  // Pre-fill form with current values
-  async ({ effects }) => ({
-    smtp: (await storeJson.read((s) => s.smtp).const(effects)) || undefined,
+  // Pre-fill form with current values (.once(): a prefill is a one-shot read)
+  async () => ({
+    smtp: smtpPrefill(await storeJson.read((s) => s.smtp).once()),
   }),
 
   // Save to store
@@ -174,11 +173,11 @@ export const manageSmtp = sdk.Action.withInput(
 
 ```typescript
 import { sdk } from '../sdk'
-import { getAdminCredentials } from './getAdminCredentials'
+import { setAdminPassword } from './setAdminPassword'
 import { manageSmtp } from './manageSmtp'
 
 export const actions = sdk.Actions.of()
-  .addAction(getAdminCredentials)
+  .addAction(setAdminPassword)
   .addAction(manageSmtp)
 ```
 
@@ -188,10 +187,9 @@ export const actions = sdk.Actions.of()
 import { T } from '@start9labs/start-sdk'
 
 export const main = sdk.setupMain(async ({ effects }) => {
-  const store = await storeJson.read((s) => s).const(effects)
+  const smtp = await storeJson.read((s) => s.smtp).const(effects)
 
   // Resolve SMTP credentials based on selection
-  const smtp = store?.smtp
   let smtpCredentials: T.SmtpValue | null = null
 
   if (smtp?.selection === 'system') {
@@ -201,8 +199,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
       smtpCredentials.from = smtp.value.customFrom
     }
   } else if (smtp?.selection === 'custom') {
-    // Use custom SMTP credentials
-    smtpCredentials = smtp.value
+    // Use the custom provider the user picked
+    const { host, from, username, password, security } = smtp.value.provider.value
+    smtpCredentials = {
+      host,
+      port: Number(security.value.port),
+      from,
+      username,
+      password: password ?? null,
+      security: security.selection,
+    }
   }
   // If smtp.selection === 'disabled', smtpCredentials remains null
 
@@ -218,11 +224,10 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
 ### 5. Initialize with SMTP disabled
 
-In `init/initializeService.ts`:
+In `init/seedSecrets.ts`:
 
 ```typescript
-await storeJson.write(effects, {
-  adminPassword,
+await storeJson.merge(effects, {
   secretKey,
   smtp: { selection: 'disabled', value: {} },
 })
@@ -234,10 +239,11 @@ The resolved SMTP credentials have this structure:
 
 ```typescript
 interface SmtpValue {
-  server: string
+  host: string
   port: number
-  login: string
-  password?: string | null
   from: string
+  username: string
+  password: string | null | undefined
+  security: 'starttls' | 'tls'
 }
 ```

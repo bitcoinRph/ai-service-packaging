@@ -10,5 +10,5 @@ This workspace may be used by Claude Code, Codex, Hermes Agent, or OpenClaw. If 
 
 Build policy:
 - Prefer GitHub Actions for `.s9pk` builds using `ai-service-packaging/github-actions.md`.
-- For local builds, initialize the workspace with `start-cli s9pk init-workspace .` from the workspace root or `start-cli s9pk init-workspace ..` from inside a package repo.
+- For local builds, this workspace must be initialized once with `start-cli s9pk init-workspace .` (never from inside a package repo); that also checks out the official guide into `start-technologies/`, whose `projects/start-sdk/docs/src/recipes.md` outranks this guide where they differ.
 - Never install, sideload, update, or restart a live StartOS service without explicit human approval.

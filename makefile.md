@@ -1,56 +1,53 @@
 # Makefile Build System
 
-StartOS packages use a two-file Makefile system that separates reusable build logic from project-specific configuration.
+A StartOS package's `Makefile` carries only project-specific configuration and includes the shared build logic, `s9pk.mk`, which ships **inside** `@start9labs/start-sdk` since SDK 2.0. Nothing is vendored: bumping the SDK delivers build-system fixes.
 
 ## File Structure
 
 ```
 my-service-startos/
-├── Makefile     # Project-specific configuration (minimal)
-└── s9pk.mk      # Shared build logic (copy from template)
+└── Makefile     # Project-specific config; includes the SDK's s9pk.mk
 ```
 
-## s9pk.mk
+## Makefile
 
-The `s9pk.mk` file contains all the common build logic shared across StartOS packages. Copy this file from `hello-world-startos/s9pk.mk` without modification.
+```makefile
+ARCHES := x86 arm
+# overrides to s9pk.mk must precede the include statement
+include node_modules/@start9labs/start-sdk/s9pk.mk
+```
 
-### What It Provides
+`ARCHES` must align with the `arch` fields in `manifest/index.ts`. Drop `arm` only if the upstream image is amd64-only; add `riscv` only if the image actually supports it.
+
+### What s9pk.mk Provides
 
 | Target               | Description                                          |
-| -------------------- | ---------------------------------------------------- |
-| `make` or `make all` | Build for all architectures (default)                |
+|----------------------|------------------------------------------------------|
+| `make` or `make all` | Build for every architecture in `ARCHES`             |
 | `make x86`           | Build for x86_64 only                                |
 | `make arm`           | Build for aarch64 only                               |
-| `make riscv`         | Build for riscv64 only                               |
 | `make universal`     | Build a single package containing all architectures  |
 | `make install`       | Install the most recent .s9pk to your StartOS server |
 | `make clean`         | Remove build artifacts                               |
+| `make print-TARGETS` | Print the build matrix (used by CI)                  |
+
+Before packing, `s9pk.mk` runs the build gate: `npm run check` (tsc), the SDK lint runner (`node node_modules/@start9labs/start-sdk/lint.mjs`), `npx prettier --check startos`, then `npm run build` (ncc bundle to `javascript/index.js`).
 
 ### Variables
 
 | Variable  | Default         | Description                              |
-| --------- | --------------- | ---------------------------------------- |
+|-----------|-----------------|------------------------------------------|
 | `ARCHES`  | `x86 arm riscv` | Architectures to build by default        |
-| `TARGETS` | `arches`        | Default build target                     |
+| `TARGETS` | `$(ARCHES)`     | Leaf targets CI fans out over            |
 | `VARIANT` | (unset)         | Optional variant suffix for package name |
 
-## Makefile
-
-The project `Makefile` is minimal and just includes `s9pk.mk`:
-
-```makefile
-include s9pk.mk
-```
-
 ### Adding Custom Targets
-
-For services with variants (e.g., GPU support), extend the Makefile:
 
 ```makefile
 TARGETS := generic rocm
 ARCHES := x86 arm
 
-include s9pk.mk
+include node_modules/@start9labs/start-sdk/s9pk.mk
 
 .PHONY: generic rocm
 
@@ -61,60 +58,33 @@ rocm:
 	ROCM=1 $(MAKE) all_arches VARIANT=rocm ARCHES=x86_64
 ```
 
-This produces packages named `myservice_generic_x86_64.s9pk` and `myservice_rocm_x86_64.s9pk`.
+Each variant must declare a distinct `hardwareRequirements` entry in the manifest.
 
-### Overriding Defaults
+## Prerequisites
 
-Override variables before including s9pk.mk:
+Building signs the package with a **workspace signing key**, so the package must live inside a packaging workspace: a parent directory holding `.startos/build.key.pem` (or a `schema:`-tagged `.startos/config.yaml`). `start-cli` walks up from the package directory to find it. Create one with `start-cli s9pk init-workspace <dir>` in the directory that will hold your package repos, never inside a package repo.
 
-```makefile
-# Build only for x86 and arm
-ARCHES := x86 arm
+Without a workspace, `make` fails with a message pointing at `init-workspace`.
 
-include s9pk.mk
-```
+The build also needs Docker (running), `make`, Node.js 22+ with `npm`, `start-cli`, `git`, `jq` and SquashFS tools. See [Environment Setup](./environment-setup.md).
 
 ## Build Commands
 
 ```bash
-# Build for all architectures
-make
-
-# Build for a specific architecture
-make x86
+make x86              # the fast path while developing: one architecture
 make arm
-
-# Install to StartOS server (requires ~/.startos/config.yaml)
-make install
-
-# Clean build artifacts
-make clean
+make                  # every architecture in ARCHES
+make universal        # one multi-arch package, for publishing
+make clean x86        # chain targets
 ```
-
-## Prerequisites
-
-The build system checks for:
-
-- `start-cli` - StartOS CLI tool
-- `npm` - Node.js package manager
-- `~/.startos/developer.key.pem` - Developer key (auto-initialized if missing)
-- A StartOS packaging workspace initialized in the parent directory (`start-cli s9pk init-workspace ..` from inside the package repo)
-
-If `make` fails with `Uninitialized: No packaging workspace found`, initialize the workspace and retry:
-
-```bash
-start-cli s9pk init-workspace ..
-make
-```
-
-For GitHub Actions, include a dedicated workspace-init step before `make`; see [GitHub Actions CI](./github-actions.md).
 
 ## Installation
 
-Configure your StartOS server in `~/.startos/config.yaml`:
+`make install` uploads the most recently built `.s9pk` to the device named by `host.default` in the workspace's `.startos/config.yaml` (not `~/.startos/config.yaml`):
 
 ```yaml
-host: http://your-server.local
+host:
+  default: https://your-device.local
 ```
 
-Then run `make install` to build and install the package.
+Log in once with `start-cli auth login`, then `make x86 install`. Your machine must trust the device's certificate, or sideload the `.s9pk` through the StartOS web interface instead. Never run `make install` against a live server without the user's explicit approval.

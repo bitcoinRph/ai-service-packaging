@@ -1,6 +1,6 @@
 # File Models
 
-File Models represent configuration files as TypeScript definitions, providing type safety and runtime enforcement throughout your codebase.
+File Models represent configuration files as TypeScript definitions using **zod** schemas (SDK 2.x; the older `matches` API is gone), providing type safety and runtime validation throughout your codebase. Import `z` from `@start9labs/start-sdk`: its `z.object` preserves unknown keys, which keeps upstream-written settings intact. Official reference: `start-technologies/projects/start-sdk/docs/src/file-models.md`.
 
 ## Supported Formats
 
@@ -18,38 +18,38 @@ Custom parser/serializer support is available for non-standard formats.
 ### store.json.ts (Common Pattern)
 
 ```typescript
-import { matches, FileHelper } from '@start9labs/start-sdk'
+import { FileHelper, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
-const { object, string, number, boolean } = matches
-
-const shape = object({
-  adminPassword: string.optional().onMismatch(undefined),
-  secretKey: string.optional().onMismatch(undefined),
-  someNumber: number.optional().onMismatch(0),
-  someFlag: boolean.optional().onMismatch(false),
+const shape = z.object({
+  adminPassword: z.string().optional().catch(undefined),
+  secretKey: z.string().catch(''),
+  someNumber: z.number().catch(0),
+  someFlag: z.boolean().catch(false),
 })
 
 export const storeJson = FileHelper.json(
-  { base: sdk.volumes.main, subpath: 'store.json' },
+  { base: sdk.volumes.main, subpath: './store.json' },
   shape,
 )
 ```
 
+Give every key a `.catch()` default. Then `storeJson.merge(effects, {})` seeds the file on install, repairs invalid values, and `merge` never removes keys you do not name.
+
 ### YAML Configuration
 
 ```typescript
-import { matches, FileHelper } from '@start9labs/start-sdk'
+import { FileHelper, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
-const { object, string, array } = matches
+const serverShape = z.object({
+  host: z.string().catch('localhost'),
+  port: z.number().catch(8080),
+})
 
-const shape = object({
-  server: object({
-    host: string,
-    port: number,
-  }),
-  features: array(string),
+const shape = z.object({
+  server: serverShape.catch(() => serverShape.parse({})),
+  features: z.array(z.string()).catch([]),
 })
 
 export const configYaml = FileHelper.yaml(
@@ -57,6 +57,8 @@ export const configYaml = FileHelper.yaml(
   shape,
 )
 ```
+
+`.catch()` does not cascade into nested objects: give each nested schema its own `.catch(() => nested.parse({}))`.
 
 ## Reading File Models
 
@@ -75,13 +77,13 @@ export const configYaml = FileHelper.yaml(
 
 ```typescript
 // One-time read (no restart on change) - returns null if file doesn't exist
-const store = await storeJson.read((s) => s).once()
+const store = await storeJson.read().once()
 
 // Handle missing file with nullish coalescing
 const keys = (await authorizedKeysFile.read().once()) ?? []
 
 // Reactive read (service restarts if value changes)
-const store = await storeJson.read((s) => s).const(effects)
+const store = await storeJson.read().const(effects)
 
 // Read only specific fields (subset reading)
 const password = await storeJson.read((s) => s.adminPassword).once()
@@ -104,7 +106,21 @@ const serverHost = await configYaml.read((c) => c.server.host).once()
 
 ## Writing File Models
 
+### Merge (the default)
+
+```typescript
+// Seed on first install: every .catch() default fills in
+await storeJson.merge(effects, {})
+
+// Update specific fields, preserve everything else
+await storeJson.merge(effects, { someFlag: false })
+```
+
+Arrays are replaced whole, objects are merged key by key, and comments in a YAML or TOML file do not survive re-serialization.
+
 ### Full Write
+
+Only when the whole file must be replaced, for example in a migration:
 
 ```typescript
 await storeJson.write(effects, {
@@ -115,81 +131,60 @@ await storeJson.write(effects, {
 })
 ```
 
-### Merge (Partial Update)
+## Self-healing values
 
-```typescript
-// Only update specific fields, preserve others
-await storeJson.merge(effects, { someFlag: false })
-```
-
-## Type Coercion
-
-File Models provide runtime type coercion. For example, if a number is unexpectedly stored as a string, the validator can convert it back:
-
-```typescript
-const shape = object({
-  port: number.onMismatch((val) => {
-    // Convert string to number if needed
-    if (typeof val === 'string') return parseInt(val, 10)
-    return 8080 // default
-  }),
-})
-```
+A key that fails validation is replaced by its `.catch()` default on the next `merge`, which is how a hand-edited or corrupted file recovers. Coerce with zod when a stored string should be a number: `z.coerce.number().catch(8080)`.
 
 ## Common Patterns
 
 ### Optional Fields with Defaults
 
 ```typescript
-const shape = object({
-  // Optional with undefined default
-  apiKey: string.optional().onMismatch(undefined),
+const shape = z.object({
+  // Optional, absent by default
+  apiKey: z.string().optional().catch(undefined),
 
-  // Optional with value default
-  port: number.optional().onMismatch(8080),
+  // Optional with a value default
+  port: z.number().catch(8080),
 
-  // Required field
-  name: string,
+  // Generated at install, so the default is the empty string until seeded
+  secretKey: z.string().catch(''),
 })
 ```
 
 ### Nested Objects
 
 ```typescript
-const shape = object({
-  database: object({
-    host: string,
-    port: number,
-    name: string,
-  }),
-  smtp: object({
-    enabled: boolean,
-    server: string.optional().onMismatch(undefined),
-  }),
+const databaseShape = z.object({
+  host: z.string().catch('127.0.0.1'),
+  port: z.number().catch(5432),
+  name: z.string().catch('app'),
+})
+
+const shape = z.object({
+  database: databaseShape.catch(() => databaseShape.parse({})),
 })
 ```
 
 ### Hardcoded Literal Values
 
-For values that should always be a specific literal and never change (e.g., internal ports, paths, auth modes), use `literal().onMismatch()`:
+For values that should always be a specific literal and never change (e.g., internal ports, paths, auth modes), use `z.literal().catch()`:
 
 ```typescript
-import { matches, FileHelper } from '@start9labs/start-sdk'
-
-const { object, string, literal } = matches
+import { FileHelper, z } from '@start9labs/start-sdk'
 
 const port = 8080
 const dataDir = '/data'
 
-const shape = object({
+const shape = z.object({
   // These values are hardcoded and will be corrected on the next merge
-  port: literal(port).onMismatch(port),
-  dataDir: literal(dataDir).onMismatch(dataDir),
-  auth: literal('password').onMismatch('password'),
-  tls: literal(false).onMismatch(false),
+  port: z.literal(port).catch(port),
+  dataDir: z.literal(dataDir).catch(dataDir),
+  auth: z.literal('password').catch('password'),
+  tls: z.literal(false).catch(false),
 
   // This value can vary
-  password: string.optional().onMismatch(undefined),
+  password: z.string().optional().catch(undefined),
 })
 ```
 
@@ -203,13 +198,10 @@ This pattern ensures:
 For complex types like SMTP, use the SDK's built-in validators:
 
 ```typescript
-import { sdk } from '../sdk'
+import { FileHelper, smtpShape, z } from '@start9labs/start-sdk'
 
-const shape = object({
-  adminPassword: string.optional().onMismatch(undefined),
-  smtp: sdk.inputSpecConstants.smtpInputSpec.validator.onMismatch({
-    selection: 'disabled',
-    value: {},
-  }),
+const shape = z.object({
+  adminPassword: z.string().optional().catch(undefined),
+  smtp: smtpShape,
 })
 ```

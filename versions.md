@@ -1,105 +1,64 @@
 # Versioning
 
-StartOS uses Extended Versioning (ExVer) to manage package versions, allowing downstream maintainers to release updates without upstream changes.
+StartOS uses Extended Versioning (ExVer) to manage package versions, allowing downstream maintainers to release updates without upstream changes. The official reference is `start-technologies/projects/start-sdk/docs/src/versions.md` (<https://docs.start9.com/packaging/versions.html>); this page is the short form.
 
 ## Version Format
 
 ```
-[#flavor:]<upstream>[-upstream-prerelease]:<downstream>[-downstream-prerelease]
+[#flavor:]<upstream>[-upstream-prerelease]:<downstream>
 ```
 
-| Component | Description | Example |
-|-----------|-------------|---------|
-| `flavor` | Optional variant for diverging forks | `#libre:` |
-| `upstream` | Upstream project version (SemVer) | `26.0.0` |
-| `upstream-prerelease` | Upstream prerelease suffix | `-beta.1` |
-| `downstream` | StartOS wrapper revision | `0`, `1`, `2` |
-| `downstream-prerelease` | Wrapper prerelease suffix | `-alpha.0`, `-beta.0` |
+| Component             | Description                          | Example       |
+|-----------------------|--------------------------------------|---------------|
+| `flavor`              | Optional variant for diverging forks | `#libre:`     |
+| `upstream`            | Upstream project version (SemVer)    | `26.0.0`      |
+| `upstream-prerelease` | Upstream prerelease suffix           | `-beta.1`     |
+| `downstream`          | StartOS wrapper revision             | `0`, `1`, `2` |
+
+The downstream revision is always a plain integer. Prerelease suffixes appear only on the upstream side, when wrapping an upstream alpha, beta or rc.
 
 ### Flavor
 
-Flavors are for diverging forks of a project that maintain separate version histories. Example: if a project forks into "libre" and "pro" editions that diverge significantly, each would have its own flavor prefix.
-
-Do NOT use flavors for hardware variants (like GPU types) - those should be handled via build configuration.
+Flavors are for diverging forks of a project that maintain separate version histories. Do NOT use flavors for hardware variants (like GPU types) - those are handled via build configuration (`VARIANT` in the Makefile).
 
 ### Examples
 
-| Version String | Upstream | Downstream |
-|----------------|----------|------------|
-| `26.0.0:0` | 26.0.0 (stable) | 0 (stable) |
-| `26.0.0:0-beta.0` | 26.0.0 (stable) | 0-beta.0 |
-| `26.0.0-rc.1:0-alpha.0` | 26.0.0-rc.1 | 0-alpha.0 |
-| `0.13.5:0-alpha.0` | 0.13.5 (stable) | 0-alpha.0 |
-| `2.3.2:1-beta.0` | 2.3.2 (stable) | 1-beta.0 |
+| Version String  | Upstream        | Downstream |
+|-----------------|-----------------|------------|
+| `26.0.0:0`      | 26.0.0 (stable) | 0          |
+| `26.0.0-rc.1:0` | 26.0.0-rc.1     | 0          |
+| `2.3.2:1`       | 2.3.2 (stable)  | 1          |
 
 ### Version Ordering
 
-Versions are compared by:
 1. Upstream version (most significant)
 2. Upstream prerelease (stable > rc > beta > alpha)
 3. Downstream revision
-4. Downstream prerelease (stable > rc > beta > alpha)
-
-Example ordering (lowest to highest):
-- `1.0.0-alpha.0:0`
-- `1.0.0-beta.0:0`
-- `1.0.0:0-alpha.0`
-- `1.0.0:0-beta.0`
-- `1.0.0:0` (fully stable)
-- `1.0.0:1-alpha.0`
-- `1.0.0:1`
-- `1.1.0:0-alpha.0`
 
 ## Choosing a Version
 
-When creating a new package:
-
-1. **Select the latest stable upstream version** - avoid prereleases (alpha, beta, rc) unless necessary
-2. **Match the Docker image tag** - the version in `manifest/index.ts` `images.*.source.dockerTag` must match the upstream version
-3. **Match the git submodule** - if using a submodule, check out the corresponding tag
-4. **Start downstream at 0** - increment only when making wrapper-only changes
-5. **Start downstream as alpha or beta** - use `-alpha.0` or `-beta.0` for initial releases
-
-### Version Consistency Checklist
-
-Ensure these all match for upstream version `X.Y.Z`:
-
-- [ ] `startos/install/versions/vX.Y.Z.0.a0.ts` - version file
-- [ ] `version: 'X.Y.Z:0-alpha.0'` - in VersionInfo
-- [ ] `dockerTag: 'image:X.Y.Z'` - in `manifest/index.ts` (if using pre-built image)
-- [ ] Git submodule checked out to `vX.Y.Z` tag (if applicable)
+1. **Select the latest stable upstream version** - avoid prereleases unless necessary
+2. **Match the Docker image tag** - `images.*.source.dockerTag` in `manifest/index.ts` must match the upstream version (for a `dockerBuild` from a submodule or fork, the checked-out upstream tag)
+3. **Start downstream at 0** - increment only for wrapper-only changes
 
 ## File Structure
 
+The latest version **always** lives in `startos/versions/current.ts`. The filename never changes as you bump; only its contents do. Historical versions are kept as their own files only when a later migration must upgrade *through* them.
+
 ```
-startos/install/versions/
-├── index.ts              # Exports current and historical versions
-├── v1.0.0.0.a0.ts        # Version 1.0.0:0-alpha.0
-├── v1.0.0.0.ts           # Version 1.0.0:0 (stable)
-└── v1.1.0.0.a0.ts        # Version 1.1.0:0-alpha.0
+startos/versions/
+├── index.ts          # VersionGraph: imports current, lists historical versions in `other`
+├── current.ts        # The latest version (always this filename)
+└── v1.0.0_0.ts       # A historical version kept because it carries a migration
 ```
 
-### Version File Naming
-
-Convert the version string to a filename:
-- Replace `.` and `:` with `.`
-- Replace `-alpha.` with `.a`
-- Replace `-beta.` with `.b`
-- Prefix with `v`
-
-| Version | Filename |
-|---------|----------|
-| `26.0.0:0-beta.0` | `v26.0.0.0.b0.ts` |
-| `0.13.5:0-alpha.0` | `v0.13.5.0.a0.ts` |
-| `2.3.2:1` | `v2.3.2.1.ts` |
-
-### Version File Template
+### current.ts Template
 
 ```typescript
-import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
+import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
-export const v_X_Y_Z_0_a0 = VersionInfo.of({
-  version: 'X.Y.Z:0-alpha.0',
+export const current = VersionInfo.of({
+  version: 'X.Y.Z:0',
   releaseNotes: {
     en_US: 'Initial release for StartOS',
     es_ES: 'Versión inicial para StartOS',
@@ -109,7 +68,7 @@ export const v_X_Y_Z_0_a0 = VersionInfo.of({
   },
   migrations: {
     up: async ({ effects }) => {},
-    down: IMPOSSIBLE,  // Use for initial versions or breaking changes
+    down: IMPOSSIBLE,
   },
 })
 ```
@@ -117,52 +76,58 @@ export const v_X_Y_Z_0_a0 = VersionInfo.of({
 ### index.ts
 
 ```typescript
-export { v_X_Y_Z_0_a0 as current } from './vX.Y.Z.0.a0'
-export const other = []  // Add previous versions here for migrations
+import { VersionGraph } from '@start9labs/start-sdk'
+import { current } from './current'
+
+export const versionGraph = VersionGraph.of({
+  current,
+  other: [],
+})
 ```
+
+### Historical Version File Naming
+
+When a migration forces a version out of `current.ts`, rename the file after the version it holds: prefix `v`, replace `:` with `_`, keep the dots. Rename its export from `current` to the same name with every `.`, `:` and `-` replaced by `_`.
+
+| Version         | Filename            | Export         |
+|-----------------|---------------------|----------------|
+| `26.0.0:0`      | `v26.0.0_0.ts`      | `v_26_0_0_0`   |
+| `26.0.0-rc.1:0` | `v26.0.0-rc.1_0.ts` | `v_26_0_0_rc_1_0` |
+| `2.3.2:1`       | `v2.3.2_1.ts`       | `v_2_3_2_1`    |
 
 ## Incrementing Versions
 
+**No migration (the common case): edit `current.ts` in place.** Change `version` and `releaseNotes`. Do not rename the file, do not touch `index.ts`.
+
+**Migration needed:** rename `current.ts` to its historical name, add that version to `other` in `index.ts`, then create a fresh `current.ts` with the new version and the `up`/`down` migration.
+
+A released version is **not** a reason to add it to `other`; only a migration is. `VersionGraph` synthesizes a range vertex below `current`, so any older install migrates to `current` in one hop.
+
 ### Upstream Update
 
-When the upstream project releases a new version:
-1. Update git submodule to new tag
-2. Update `dockerTag` in `manifest/index.ts`
-3. Create new version file with new upstream version
-4. Reset downstream to 0
+1. Update the git submodule (or fork checkout) to the new tag
+2. Update `dockerTag` in `manifest/index.ts` (if using a pre-built image)
+3. Edit `current.ts`: new upstream version, downstream reset to 0, release notes summarizing the upstream changelog with a link to it
 
 ### Wrapper-Only Changes
 
-When making changes to the StartOS wrapper without upstream changes:
-1. Keep upstream version the same
-2. Increment downstream revision
-3. Create new version file
-
-### Promoting Prereleases
-
-To promote from alpha to beta to stable:
-1. Create new version file without prerelease suffix (or with next stage)
-2. Update index.ts to export new version as current
-3. Move old version to `other` array
+Keep the upstream version, increment the downstream revision, edit `current.ts` in place.
 
 ## Migrations
 
-Migrations run when users update between versions:
+Migrations run when users update between versions, and only for data the upstream service does not migrate itself:
 
 ```typescript
 migrations: {
   up: async ({ effects }) => {
     // Code to migrate from previous version
-    // Access volumes, update configs, etc.
   },
-  down: async ({ effects }) => {
-    // Code to rollback (if possible)
-  },
-  // Or use IMPOSSIBLE if rollback not supported
-  down: IMPOSSIBLE,
+  down: IMPOSSIBLE, // or an async function when rollback is possible
 }
 ```
 
-Use `IMPOSSIBLE` for:
-- Initial versions (nothing to rollback to)
-- Breaking changes that can't be reversed
+Use `IMPOSSIBLE` for initial versions and for breaking changes that cannot be reversed.
+
+## Git Tag Conventions
+
+Releases are tagged `v{upstream}_{downstream}`: `26.0.0:0` becomes `v26.0.0_0`. No package-name prefix; push tags individually.

@@ -110,7 +110,7 @@ Use this prompt with an AI assistant to generate your README. Replace `[Service 
 > **Your task:**
 >
 > 1. Read the entire `[service-name]-startos` codebase — manifest, actions, main.ts, interfaces, backups, fileModels, install/versions, everything
-> 2. Cross-reference with the upstream docs at `docsUrl` in `startos/manifest/index.ts`
+> 2. Cross-reference with the upstream docs at `upstreamRepo` in `startos/manifest/index.ts`
 > 3. Write a README that serves as a "diff" against upstream
 >
 > **Key principle:** If something isn't in our README, users should assume upstream docs are accurate. Don't duplicate upstream documentation.

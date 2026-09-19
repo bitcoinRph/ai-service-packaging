@@ -2,43 +2,40 @@
 
 ## Root Directory Layout
 
-A StartOS package follows this organizational pattern:
+This is the layout `start-cli s9pk init-package` scaffolds (SDK 2.x). `hello-world-startos/` in this repository is the same template.
 
 ```
 my-service-startos/
-├── assets/                 # Supplementary files (required, can be empty)
-│   └── README.md
+├── .github/workflows/      # build.yml, tagAndRelease.yml, release.yml (Start9 reusable workflows)
+├── assets/                 # Supplementary files mounted into the container (required, at least one file)
 ├── startos/                # Primary development directory
-│   ├── actions/            # User-facing action scripts
-│   ├── fileModels/         # Type-safe config file representations
-│   ├── i18n/               # Internationalization
-│   │   ├── index.ts        # setupI18n() call (boilerplate)
-│   │   └── dictionaries/
-│   │       ├── default.ts  # English strings keyed by index
-│   │       └── translations.ts  # Translations for other locales
-│   ├── init/               # Container initialization logic
-│   ├── install/            # Version management and migrations
-│   │   └── versions/
-│   ├── manifest/           # Static service metadata
-│   │   ├── index.ts        # setupManifest() call
-│   │   └── i18n.ts         # Translated description, alerts
-│   ├── backups.ts          # Backup volumes and exclusions
+│   ├── actions/            # User-facing actions
+│   ├── fileModels/         # Type-safe config file representations (zod)
+│   ├── i18n/               # default.ts (English keyed by index) and translations.ts
+│   ├── init/               # index.ts (init order) plus named init files: seedFiles.ts, watchCredentials.ts
+│   ├── manifest/           # index.ts (setupManifest) and i18n.ts (descriptions)
+│   ├── versions/           # index.ts (VersionGraph) and current.ts (the live version)
+│   ├── backups.ts          # Backup volumes, pg_dump, exclusions
 │   ├── dependencies.ts     # Service dependencies
 │   ├── index.ts            # Exports (boilerplate)
 │   ├── interfaces.ts       # Network interface definitions
-│   ├── main.ts             # Daemon runtime and health checks
+│   ├── main.ts             # Daemons, oneshots, health checks
 │   ├── sdk.ts              # SDK initialization (boilerplate)
-│   └── utils.ts            # Package-specific utilities
+│   └── utils.ts            # Package-specific constants
+├── .dockerignore
 ├── .gitignore
+├── AGENTS.md               # Repo-specific agent context; CLAUDE.md is `@AGENTS.md`
+├── CLAUDE.md
 ├── Dockerfile              # Optional - for custom images
-├── icon.svg                # Service icon (max 40 KiB)
-├── LICENSE                 # Package license (symlink to upstream)
-├── Makefile                # Project config (includes s9pk.mk)
-├── s9pk.mk                 # Shared build logic (boilerplate)
-├── package.json
+├── icon.svg                # Service icon (max 40 KiB), fetched from upstream
+├── instructions.md         # End-user instructions, packed into the .s9pk (required by the build)
+├── LICENSE                 # Symlink to upstream license
+├── Makefile                # ARCHES plus `include node_modules/@start9labs/start-sdk/s9pk.mk`
+├── package.json            # depends on @start9labs/start-sdk (pinned exactly)
 ├── package-lock.json
-├── README.md
-├── tsconfig.json
+├── README.md               # Technical reference: how the package differs from upstream
+├── tsconfig.json           # extends @start9labs/start-sdk/tsconfig.base.json
+├── UPDATING.md             # How to find and apply the next upstream version
 └── upstream-project/       # Git submodule (optional)
 ```
 
@@ -46,70 +43,43 @@ my-service-startos/
 
 ### Boilerplate Files
 
-These files typically require minimal modification:
-
-- `.gitignore`
-- `Makefile` - Just includes `s9pk.mk` (see [Makefile](./makefile.md))
-- `s9pk.mk` - Shared build logic, copy from template without modification
-- `package.json` / `package-lock.json`
-- `tsconfig.json`
+Leave these as the scaffold ships them: `.gitignore`, `.dockerignore`, `Makefile` (only `ARCHES` changes), `package.json`, `tsconfig.json`, `startos/sdk.ts`, `startos/index.ts`, `startos/i18n/index.ts`, `AGENTS.md` (except its `## This repo` section) and `CLAUDE.md`.
 
 ### icon.svg
 
-The service's visual identifier. Maximum size is 40 KiB. Accepts `.svg`, `.png`, `.jpg`, and `.webp` formats.
+Maximum 40 KiB. Accepts `.svg`, `.png`, `.jpg`, and `.webp`. Symlink or copy the real upstream asset.
 
 ### LICENSE
 
-The package's software license, ALWAYS matching the upstream service's license. Create a symlink:
+Always matching the upstream service's license: `ln -sf upstream-project/LICENSE LICENSE`.
 
-```bash
-ln -sf upstream-project/LICENSE LICENSE
-```
+### instructions.md
+
+Required at the package root; `start-cli s9pk pack` refuses to build without it. It renders on the Instructions tab in StartOS after install and is written for the end user: a `## Documentation` section with upstream links, what the service gives you on StartOS, numbered setup steps from first launch, and the user-visible actions. See [Writing READMEs](./writing-readmes.md) for the README's different audience.
 
 ### README.md
 
-Documentation template that should be customized for your specific service.
+Technical reference for developers and AI assistants: how the package differs from upstream, volumes, interfaces, actions, health checks, backups, limitations, and a YAML quick-reference block. No version numbers.
+
+### UPDATING.md
+
+Where the upstream version pin lives and how to bump it, so a future update needs no rediscovery.
 
 ## Key Directories
 
 ### assets/
 
-Stores supplementary files and scripts needed by the service, such as configuration generators. **Required** - create with at least a README.md if empty.
+Files packed into the `.s9pk` and mountable with `sdk.Mounts.of().mountAssets({ subpath, mountpoint })`: entrypoint scripts, config templates, a scheduler. Must contain at least one file.
 
 ### startos/
 
-The primary development directory containing SDK integration files and package logic.
-
-## Startos Directory Details
-
-### Core TypeScript Modules
-
-| File              | Purpose                                                               |
-| ----------------- | --------------------------------------------------------------------- |
-| `main.ts`         | Daemon runtime configuration and health checks                        |
-| `interfaces.ts`   | Network interface definitions and port bindings                       |
-| `backups.ts`      | Backup volumes and exclusion patterns                                 |
-| `dependencies.ts` | Service dependencies and version requirements                         |
-| `sdk.ts`          | SDK initialization (boilerplate)                                      |
-| `utils.ts`        | Package-specific constants and helper functions                       |
-| `index.ts`        | Module exports (boilerplate)                                          |
-
-### Subdirectories
-
-| Directory     | Purpose                                                               |
-| ------------- | --------------------------------------------------------------------- |
-| `actions/`    | Custom user-facing scripts displayed as buttons in the UI             |
-| `fileModels/` | Type-safe representations of config files (.json, .yaml, .toml, etc.) |
-| `i18n/`       | Internationalization: default dictionary and translated strings       |
-| `init/`       | Container initialization logic (install, update, restart)             |
-| `install/`    | Version management and migration logic                                |
-| `manifest/`   | Service metadata (ID, name, description, images) with i18n            |
+The SDK integration. `main.ts` runs on every service start; `init/` runs on install, update, restore and container rebuild; `versions/` carries the version and migrations; `interfaces.ts` runs on install, update and config save.
 
 ## Initialization Triggers
 
-Service containers initialize in these scenarios:
+Container initialization (`init/`) runs on:
 
-- Fresh installation
-- Service updates or downgrades
-- StartOS system boot
-- Manual rebuild by user
+- Fresh installation, update, downgrade, or restore (`kind` is `'install'`, `'update'` or `'restore'`)
+- Server restart or the manual **Container Rebuild** action (`kind` is `null`)
+
+Starting or restarting the service does **not** re-run init; it re-runs `main.ts`.

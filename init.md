@@ -2,13 +2,16 @@
 
 ## Overview
 
-`setupOnInit` runs during container initialization. The `kind` parameter indicates why init is running:
+`setupOnInit` runs during container initialization. Name each init file for what it does (`init/seedSecrets.ts`, `init/watchCredentials.ts`), not `initializeService.ts`. The `kind` parameter indicates why init is running:
 
 | Kind | When | Use For |
 |------|------|---------|
-| `'install'` | Fresh install | Generate passwords, create admin users, bootstrap via API |
-| `'restore'` | Restoring from backup | Re-register triggers, skip password generation |
+| `'install'` | Fresh install | Generate internal secrets, seed file models, create the credentials task |
+| `'update'` | After a version upgrade | Re-apply config, post-migration setup |
+| `'restore'` | Restoring from backup | Re-register triggers; secrets come back with the store |
 | `null` | Container rebuild, server restart | Register long-lived triggers (e.g., `.const()` watchers) |
+
+Official reference: `start-technologies/projects/start-sdk/docs/src/init.md`, with the credentials recipe at `recipe-admin-credentials.md`.
 
 ## Init Kinds
 
@@ -17,15 +20,29 @@
 For one-time setup that generates new state:
 
 ```typescript
-export const initializeService = sdk.setupOnInit(async (effects, kind) => {
+export const seedSecrets = sdk.setupOnInit(async (effects, kind) => {
+  await storeJson.merge(effects, {})   // every .catch() default, on every init
+
   if (kind !== 'install') return
 
-  // Generate password, bootstrap server, etc.
-  const adminPassword = utils.getDefaultString({
-    charset: 'a-z,A-Z,0-9',
-    len: 22,
+  await storeJson.merge(effects, {
+    secretKey: utils.getDefaultString({ charset: 'a-z,A-Z,0-9', len: 64 }),
   })
-  await storeJson.write(effects, { adminPassword })
+})
+```
+
+Internal secrets (database password, signing keys) are generated here. A credential the **user** signs in with is not: pair a `setupOnInit` watcher with a `set-admin-credentials` action, so one action generates, stores, returns and later rotates it:
+
+```typescript
+// init/watchCredentials.ts
+export const watchCredentials = sdk.setupOnInit(async (effects) => {
+  const admin = await storeJson.read((s) => s.adminPassword).const(effects)
+
+  if (!admin) {
+    await sdk.action.createOwnTask(effects, setAdminPassword, 'critical', {
+      reason: i18n('Set the admin password before signing in'),
+    })
+  }
 })
 ```
 
@@ -34,13 +51,11 @@ export const initializeService = sdk.setupOnInit(async (effects, kind) => {
 For setup that should also run when restoring from backup (but not on container rebuild):
 
 ```typescript
-export const initializeService = sdk.setupOnInit(async (effects, kind) => {
+export const reRegisterWebhook = sdk.setupOnInit(async (effects, kind) => {
   if (kind === null) return  // Skip on container rebuild
 
-  // Runs on both install and restore
-  await sdk.action.createOwnTask(effects, getAdminPassword, 'critical', {
-    reason: i18n('Retrieve the admin password'),
-  })
+  // Runs on install, update and restore
+  await registerWebhook(effects)
 })
 ```
 
@@ -49,19 +64,17 @@ export const initializeService = sdk.setupOnInit(async (effects, kind) => {
 For registering `.const()` triggers that need to persist for the container's lifetime. These re-register on container rebuild:
 
 ```typescript
-export const initializeService = sdk.setupOnInit(async (effects, kind) => {
-  // Runs on install, restore, AND container rebuild
+export const registerWatchers = sdk.setupOnInit(async (effects, kind) => {
+  // Runs on install, update, restore, AND container rebuild
 
   // Register a watcher that lives for the container lifetime
   someConfig.read((c) => c.setting).const(effects)
 
   // Install-specific setup
   if (kind === 'install') {
-    const adminPassword = utils.getDefaultString({
-      charset: 'a-z,A-Z,0-9',
-      len: 22,
+    await storeJson.merge(effects, {
+      secretKey: utils.getDefaultString({ charset: 'a-z,A-Z,0-9', len: 64 }),
     })
-    await storeJson.write(effects, { adminPassword })
   }
 })
 ```
@@ -69,42 +82,35 @@ export const initializeService = sdk.setupOnInit(async (effects, kind) => {
 ## Basic Structure
 
 ```typescript
-// init/initializeService.ts
+// init/seedSecrets.ts
 import { utils } from '@start9labs/start-sdk'
-import { i18n } from '../i18n'
-import { sdk } from '../sdk'
 import { storeJson } from '../fileModels/store.json'
-import { getAdminPassword } from '../actions/getAdminPassword'
+import { sdk } from '../sdk'
 
-export const initializeService = sdk.setupOnInit(async (effects, kind) => {
+export const seedSecrets = sdk.setupOnInit(async (effects, kind) => {
+  await storeJson.merge(effects, {})
+
   if (kind !== 'install') return
 
-  // Generate and store password
-  const adminPassword = utils.getDefaultString({
-    charset: 'a-z,A-Z,0-9',
-    len: 22,
-  })
-  await storeJson.write(effects, { adminPassword })
-
-  // Create task prompting user to retrieve password
-  await sdk.action.createOwnTask(effects, getAdminPassword, 'critical', {
-    reason: i18n('Retrieve the admin password'),
+  await storeJson.merge(effects, {
+    postgresPassword: utils.getDefaultString({ charset: 'a-z,A-Z,0-9', len: 32 }),
   })
 })
 ```
 
-## Registering initializeService
+## Registering init functions
 
-Add to `init/index.ts`:
+Append them to `init/index.ts`. `restoreInit` and `versionGraph` stay first and second; a function that creates tasks must come after `actions`:
 
 ```typescript
 import { sdk } from '../sdk'
 import { setDependencies } from '../dependencies'
 import { setInterfaces } from '../interfaces'
-import { versionGraph } from '../install/versionGraph'
+import { versionGraph } from '../versions'
 import { actions } from '../actions'
 import { restoreInit } from '../backups'
-import { initializeService } from './initializeService'
+import { seedSecrets } from './seedSecrets'
+import { watchCredentials } from './watchCredentials'
 
 export const init = sdk.setupInit(
   restoreInit,
@@ -112,7 +118,8 @@ export const init = sdk.setupInit(
   setInterfaces,
   setDependencies,
   actions,
-  initializeService,  // Add this
+  seedSecrets,
+  watchCredentials,
 )
 
 export const uninit = sdk.setupUninit(versionGraph)
@@ -248,29 +255,27 @@ const password = utils.getDefaultString({
 Prompt user to run an action after install:
 
 ```typescript
-await sdk.action.createOwnTask(effects, getAdminPassword, 'critical', {
-  reason: 'Retrieve the admin password',
+await sdk.action.createOwnTask(effects, setAdminPassword, 'critical', {
+  reason: i18n('Set the admin password before signing in'),
 })
 ```
 
-Priority levels: `'critical'`, `'high'`, `'medium'`, `'low'`
+Severity levels: `'critical'` (blocks the service from starting), `'important'`, `'optional'`. Tasks are idempotent on `<package-id>:<action-id>`, so a watcher may call this on every init.
 
 ### Checking Init Kind
 
 ```typescript
-export const initializeService = sdk.setupOnInit(async (effects, kind) => {
+export const seedFiles = sdk.setupOnInit(async (effects, kind) => {
   // kind === 'install': Fresh install
+  // kind === 'update': After a version upgrade
   // kind === 'restore': Restoring from backup
   // kind === null: Container rebuild / server restart
 
   if (kind === 'install') {
-    // Generate new passwords, bootstrap server
+    // Generate internal secrets, bootstrap server
   }
 
-  if (kind !== null) {
-    // Runs on install OR restore (skip container rebuild)
-  }
-
-  // No check: runs on ALL init types (install, restore, container rebuild)
+  if (!kind) return
+  // Reached only on install, update or restore (skips container rebuild)
 })
 ```
